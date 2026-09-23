@@ -1,0 +1,34 @@
+name: Apply report v1.6.4
+
+on:
+  push:
+    paths:
+      - ".tmp/v164/READY"
+
+permissions:
+  contents: write
+
+jobs:
+  update-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python -m pip install --quiet python-docx
+      - name: Backup and finalize front matter
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backup
+          cp "รายงานสหกิจ.docx" "backup/รายงานสหกิจ_before_v1.6.4_2026-09-23.docx"
+          python ".tmp/v164/fix_frontmatter.py"
+      - name: Commit report and backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "รายงานสหกิจ.docx" "backup/รายงานสหกิจ_before_v1.6.4_2026-09-23.docx"
+          git commit -m "Finalize report abstract, evaluation statistics, and table titles"
+          git push
