@@ -3,7 +3,7 @@ name: Apply report update
 on:
   push:
     paths:
-      - ".tmp/report_b64/READY"
+      - ".tmp/report_update/READY"
 
 permissions:
   contents: write
@@ -15,14 +15,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Reconstruct updated DOCX and backup current report
+      - name: Install DOCX tooling
+        run: python -m pip install --quiet python-docx
+      - name: Backup and update report
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p backup
           cp "รายงานสหกิจ.docx" "backup/รายงานสหกิจ_before_ch2_ch5_2026-09-23.docx"
-          cat .tmp/report_b64/part*.txt | base64 -d > "รายงานสหกิจ.docx"
-          echo "4a01203626f69de1c2f3a9238a21a96f37d784027abd741ad5a0e34fce7eb70f  รายงานสหกิจ.docx" | sha256sum -c -
+          python ".tmp/report_update/update_report.py"
       - name: Commit report update
         shell: bash
         run: |
