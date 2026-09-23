@@ -1,0 +1,32 @@
+name: Inspect report state
+
+on:
+  push:
+    paths:
+      - ".tmp/inspect_report/READY"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --quiet python-docx
+      - name: Inspect selected report content
+        shell: bash
+        run: |
+          python - <<'PY'
+          from docx import Document
+          d=Document("รายงานสหกิจ.docx")
+          needles=["T01","45.7%","44.8%","15 Layout","14 Layout","5 ไฟล์","4 ไฟล์","3.9.1","Evaluation Workflow V1.0","Autodesk. (2013b","AutoLISP developer"]
+          for i,p in enumerate(d.paragraphs):
+              t=p.text.strip()
+              if any(n in t for n in needles):
+                  print(f"P{i}: {t}")
+          for ti,t in enumerate(d.tables):
+              txt=" | ".join(c.text.replace("\n"," / ") for row in t.rows for c in row.cells)
+              if any(n in txt for n in needles):
+                  print(f"T{ti}: {txt[:4000]}")
+          PY
