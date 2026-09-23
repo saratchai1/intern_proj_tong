@@ -20,7 +20,17 @@ jobs:
           python - <<'PY'
           from docx import Document
           d=Document("รายงานสหกิจ.docx")
-          needles=["T01","45.7%","44.8%","15 Layout","14 Layout","5 ไฟล์","4 ไฟล์","3.9.1","Evaluation Workflow V1.0","Autodesk. (2013b","AutoLISP developer"]
+          print("=== FRONT MATTER PARAGRAPHS ===")
+          for i,p in enumerate(d.paragraphs[:80]):
+              t=p.text.strip()
+              if t:
+                  print(f"P{i}: {t}")
+          print("=== TABLES NEAR ABSTRACT ===")
+          for ti,t in enumerate(d.tables[:15]):
+              txt=" | ".join(c.text.replace("\n"," / ") for row in t.rows for c in row.cells)
+              print(f"T{ti}: {txt[:2500]}")
+          print("=== KEY METRICS ===")
+          needles=["T01","T02–T05","44.8%","45.7%","14 Layout","15 Layout","27:06.10","29:11.52","3.9.1","Evaluation Workflow V1.0","Autodesk. (2013b","AutoLISP developer"]
           for i,p in enumerate(d.paragraphs):
               t=p.text.strip()
               if any(n in t for n in needles):
