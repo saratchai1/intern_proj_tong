@@ -1,4 +1,4 @@
-const CACHE_NAME = "my-qr-wallet-v1";
+const CACHE_NAME = "my-qr-wallet-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
