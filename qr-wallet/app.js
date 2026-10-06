@@ -14,6 +14,11 @@ const state = {
   scanFilledFields: new Set(),
   scanning: false,
   requestAccountId: null,
+  requestQrDataUrl: null,
+  requestQrPayload: null,
+  requestRenderToken: 0,
+  requestQrCache: new Map(),
+  pendingQrPayload: null,
 };
 
 const els = {
@@ -82,6 +87,10 @@ const els = {
   requestPreviewNumber: document.querySelector("#requestPreviewNumber"),
   requestPreviewNoteRow: document.querySelector("#requestPreviewNoteRow"),
   requestPreviewNote: document.querySelector("#requestPreviewNote"),
+  dynamicQrStatus: document.querySelector("#dynamicQrStatus"),
+  dynamicQrDot: document.querySelector("#dynamicQrDot"),
+  dynamicQrTitle: document.querySelector("#dynamicQrTitle"),
+  dynamicQrText: document.querySelector("#dynamicQrText"),
   copyRequestTextBtn: document.querySelector("#copyRequestTextBtn"),
   shareRequestBtn: document.querySelector("#shareRequestBtn"),
   toast: document.querySelector("#toast"),
@@ -253,16 +262,39 @@ async function prepareImageForOcr(dataUrl) {
 }
 
 async function detectQrPayload(dataUrl) {
-  if (!("BarcodeDetector" in window)) return "";
   try {
-    const supported = await BarcodeDetector.getSupportedFormats?.();
-    if (supported && !supported.includes("qr_code")) return "";
-    const detector = new BarcodeDetector({ formats: ["qr_code"] });
+    if ("BarcodeDetector" in window) {
+      const supported = await BarcodeDetector.getSupportedFormats?.();
+      if (!supported || supported.includes("qr_code")) {
+        const detector = new BarcodeDetector({ formats: ["qr_code"] });
+        const image = new Image();
+        image.src = dataUrl;
+        await image.decode();
+        const results = await detector.detect(image);
+        if (results[0]?.rawValue) return results[0].rawValue;
+      }
+    }
+  } catch {
+    // Fall through to jsQR for broader browser support.
+  }
+
+  if (!window.jsQR) return "";
+
+  try {
     const image = new Image();
     image.src = dataUrl;
     await image.decode();
-    const results = await detector.detect(image);
-    return results[0]?.rawValue || "";
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0);
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const result = window.jsQR(pixels.data, pixels.width, pixels.height, {
+      inversionAttempts: "attemptBoth",
+    });
+    return result?.data || "";
   } catch {
     return "";
   }
@@ -287,6 +319,7 @@ async function runSmartScan() {
 
   try {
     const qrPayload = await detectQrPayload(state.pendingImage);
+    state.pendingQrPayload = qrPayload || null;
     const ocrImage = await prepareImageForOcr(state.pendingImage);
 
     const result = await window.Tesseract.recognize(ocrImage, "tha+eng", {
@@ -564,6 +597,7 @@ function render() {
 function resetEditor() {
   state.editingId = null;
   state.pendingImage = null;
+  state.pendingQrPayload = null;
   state.scanFilledFields.clear();
   state.scanning = false;
   els.editorTitle.textContent = "เพิ่ม QR";
@@ -588,6 +622,7 @@ function openEditor(id = null) {
     if (!item) return;
     state.editingId = id;
     state.pendingImage = item.image;
+    state.pendingQrPayload = item.qrPayload || null;
     els.editorTitle.textContent = "แก้ไข QR";
     els.bankInput.value = item.bank;
     els.categoryInput.value = normalizeCategory(item);
@@ -683,6 +718,135 @@ function copyAccountNumber(item) {
   );
 }
 
+function setDynamicQrStatus(mode, title, text) {
+  els.dynamicQrStatus.dataset.mode = mode;
+  els.dynamicQrTitle.textContent = title;
+  els.dynamicQrText.textContent = text;
+}
+
+function parseEmvTlv(payload) {
+  const value = String(payload || "").trim();
+  const fields = [];
+  let cursor = 0;
+
+  while (cursor + 4 <= value.length) {
+    const tag = value.slice(cursor, cursor + 2);
+    const lengthText = value.slice(cursor + 2, cursor + 4);
+    if (!/^\d{2}$/.test(tag) || !/^\d{2}$/.test(lengthText)) return null;
+
+    const length = Number(lengthText);
+    const start = cursor + 4;
+    const end = start + length;
+    if (end > value.length) return null;
+
+    fields.push({ tag, value: value.slice(start, end) });
+    cursor = end;
+  }
+
+  return cursor === value.length ? fields : null;
+}
+
+function encodeEmvField(tag, value) {
+  const text = String(value);
+  const length = text.length;
+  if (length > 99) throw new Error("EMV field too long");
+  return `${tag}${String(length).padStart(2, "0")}${text}`;
+}
+
+function crc16CcittFalse(text) {
+  let crc = 0xffff;
+
+  for (let i = 0; i < text.length; i += 1) {
+    crc ^= text.charCodeAt(i) << 8;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+      crc &= 0xffff;
+    }
+  }
+
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+
+function isPromptPayPayload(payload) {
+  const fields = parseEmvTlv(payload);
+  if (!fields) return false;
+
+  return fields.some(({ tag, value }) =>
+    tag === "29" && /A00000067701011[14]/.test(value),
+  );
+}
+
+function amountForPromptPay(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  const fixed = amount.toFixed(2);
+  if (fixed.length > 13) return "";
+  return fixed;
+}
+
+function buildPromptPayAmountPayload(payload, amountValue) {
+  const amount = amountForPromptPay(amountValue);
+  if (!amount) throw new Error("INVALID_AMOUNT");
+
+  const parsed = parseEmvTlv(String(payload || "").trim());
+  if (!parsed || !isPromptPayPayload(payload)) throw new Error("NOT_PROMPTPAY");
+
+  const fields = parsed.filter(({ tag }) => tag !== "63" && tag !== "54");
+  let hasPoi = false;
+
+  for (const field of fields) {
+    if (field.tag === "01") {
+      field.value = "12";
+      hasPoi = true;
+    }
+  }
+
+  if (!hasPoi) {
+    const payloadIndex = fields.findIndex(({ tag }) => tag > "01");
+    const poiField = { tag: "01", value: "12" };
+    if (payloadIndex >= 0) fields.splice(payloadIndex, 0, poiField);
+    else fields.push(poiField);
+  }
+
+  const amountField = { tag: "54", value: amount };
+  const currencyIndex = fields.findIndex(({ tag }) => tag === "53");
+  if (currencyIndex >= 0) fields.splice(currencyIndex + 1, 0, amountField);
+  else {
+    const nextIndex = fields.findIndex(({ tag }) => tag > "54");
+    if (nextIndex >= 0) fields.splice(nextIndex, 0, amountField);
+    else fields.push(amountField);
+  }
+
+  const withoutCrc = fields.map(({ tag, value }) => encodeEmvField(tag, value)).join("");
+  const crcInput = `${withoutCrc}6304`;
+  return `${crcInput}${crc16CcittFalse(crcInput)}`;
+}
+
+function qrDataUrlFromPayload(payload) {
+  if (!window.qrcode) throw new Error("QR_GENERATOR_UNAVAILABLE");
+  const qr = window.qrcode(0, "M");
+  qr.addData(payload, "Byte");
+  qr.make();
+  return qr.createDataURL(8, 4);
+}
+
+async function resolveRequestQrPayload(item) {
+  if (!item) return "";
+
+  if (item.qrPayload && isPromptPayPayload(item.qrPayload)) {
+    return item.qrPayload;
+  }
+
+  if (state.requestQrCache.has(item.id)) {
+    return state.requestQrCache.get(item.id) || "";
+  }
+
+  const decoded = await detectQrPayload(item.image);
+  const promptPayPayload = decoded && isPromptPayPayload(decoded) ? decoded : "";
+  state.requestQrCache.set(item.id, promptPayPayload);
+  return promptPayPayload;
+}
+
 function formatAmount(value) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) return "";
@@ -738,11 +902,17 @@ function buildRequestText(item) {
   return lines.join("\n");
 }
 
-function updateRequestPreview() {
+async function updateRequestPreview() {
+  const renderToken = ++state.requestRenderToken;
   const item = selectedRequestItem();
+
+  state.requestQrDataUrl = null;
+  state.requestQrPayload = null;
+
   if (!item) {
     els.requestAccountSummary.classList.add("hidden");
     els.requestPreview.classList.add("hidden");
+    setDynamicQrStatus("idle", "QR เดิม", "เลือกบัญชีเพื่อสร้างคำขอรับเงิน");
     return;
   }
 
@@ -770,6 +940,66 @@ function updateRequestPreview() {
   els.requestPreviewNumberRow.classList.toggle("hidden", !item.accountNumber);
   els.requestPreviewNote.textContent = note;
   els.requestPreviewNoteRow.classList.toggle("hidden", !note);
+
+  if (!amount) {
+    state.requestQrDataUrl = item.image;
+    setDynamicQrStatus(
+      "idle",
+      "QR เดิม • ยังไม่ล็อกยอด",
+      "ใส่จำนวนเงินเพื่อให้ระบบสร้าง PromptPay QR ที่ฝังยอดไว้ใน QR",
+    );
+    return;
+  }
+
+  const promptPayAmount = amountForPromptPay(els.requestAmountInput.value);
+  if (!promptPayAmount) {
+    state.requestQrDataUrl = item.image;
+    setDynamicQrStatus(
+      "warning",
+      "จำนวนเงินใช้สร้าง QR ไม่ได้",
+      "กรุณาใช้จำนวนเงินมากกว่า 0 และไม่ยาวเกินมาตรฐาน Thai QR",
+    );
+    return;
+  }
+
+  setDynamicQrStatus("loading", "กำลังสร้าง QR ล็อกยอด…", "กำลังอ่าน PromptPay payload จาก QR ที่บันทึกไว้");
+
+  try {
+    const basePayload = await resolveRequestQrPayload(item);
+    if (renderToken !== state.requestRenderToken) return;
+
+    if (!basePayload) {
+      state.requestQrDataUrl = item.image;
+      setDynamicQrStatus(
+        "warning",
+        "ล็อกยอดใน QR ไม่ได้",
+        "QR นี้อ่านไม่พบ PromptPay payload จึงแสดง QR เดิม และใส่ยอดไว้ในข้อความเรียกเก็บแทน",
+      );
+      return;
+    }
+
+    const dynamicPayload = buildPromptPayAmountPayload(basePayload, els.requestAmountInput.value);
+    const dynamicQr = qrDataUrlFromPayload(dynamicPayload);
+    if (renderToken !== state.requestRenderToken) return;
+
+    state.requestQrPayload = dynamicPayload;
+    state.requestQrDataUrl = dynamicQr;
+    els.requestPreviewQr.src = dynamicQr;
+
+    setDynamicQrStatus(
+      "success",
+      `PromptPay QR ล็อกยอด ฿${amount}`,
+      "ยอดถูกฝังใน Tag 54 ของ Thai QR Payment และสร้าง CRC ใหม่แล้ว กรุณาตรวจชื่อผู้รับในแอปธนาคารก่อนยืนยัน",
+    );
+  } catch (error) {
+    console.error("Dynamic PromptPay QR failed", error);
+    state.requestQrDataUrl = item.image;
+    setDynamicQrStatus(
+      "warning",
+      "สร้าง QR ล็อกยอดไม่สำเร็จ",
+      "กำลังใช้ QR เดิมแทน กรุณาตรวจและกรอกยอดในแอปธนาคารก่อนยืนยัน",
+    );
+  }
 }
 
 function openRequestDialog(preferredId = null) {
@@ -780,13 +1010,16 @@ function openRequestDialog(preferredId = null) {
 
   els.requestForm.reset();
   populateRequestAccounts(preferredId);
-  updateRequestPreview();
   els.requestDialog.showModal();
+  void updateRequestPreview();
 }
 
 function closeRequestDialog() {
   els.requestDialog.close();
   state.requestAccountId = null;
+  state.requestQrDataUrl = null;
+  state.requestQrPayload = null;
+  state.requestRenderToken += 1;
 }
 
 async function sharePaymentRequest() {
@@ -796,8 +1029,9 @@ async function sharePaymentRequest() {
   const text = buildRequestText(item);
 
   try {
+    const qrImage = state.requestQrDataUrl || item.image;
     const file = await dataUrlToFile(
-      item.image,
+      qrImage,
       `${item.label.replace(/[^a-zA-Z0-9ก-๙_-]+/g, "-") || "payment"}-qr.png`,
     );
 
@@ -872,6 +1106,7 @@ els.imageInput.addEventListener("change", async () => {
 
   try {
     state.pendingImage = await fileToDataUrl(file);
+    state.pendingQrPayload = null;
     els.imagePreview.src = state.pendingImage;
     els.previewWrap.classList.remove("hidden");
     els.scanBtn.disabled = false;
@@ -903,6 +1138,7 @@ els.qrForm.addEventListener("submit", async (event) => {
     account: els.accountInput.value.trim(),
     accountNumber: els.accountNumberInput.value.trim(),
     image: state.pendingImage,
+    qrPayload: state.pendingQrPayload || previous?.qrPayload || null,
     createdAt: previous?.createdAt || now,
     updatedAt: now,
   };
@@ -942,9 +1178,9 @@ els.requestFromViewerBtn.addEventListener("click", () => {
 });
 
 els.closeRequestBtn.addEventListener("click", closeRequestDialog);
-els.requestAccountSelect.addEventListener("change", updateRequestPreview);
-els.requestAmountInput.addEventListener("input", updateRequestPreview);
-els.requestNoteInput.addEventListener("input", updateRequestPreview);
+els.requestAccountSelect.addEventListener("change", () => void updateRequestPreview());
+els.requestAmountInput.addEventListener("input", () => void updateRequestPreview());
+els.requestNoteInput.addEventListener("input", () => void updateRequestPreview());
 
 els.copyRequestAccountBtn.addEventListener("click", () => {
   const item = selectedRequestItem();
