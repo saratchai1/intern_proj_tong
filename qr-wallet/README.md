@@ -18,7 +18,10 @@ Vercel เชื่อมกับ branch `main` และ root directory `qr-wa
 - Smart Scan ใช้ Tesseract OCR (Thai + English) ใน browser และใช้ BarcodeDetector อ่าน QR เมื่ออุปกรณ์รองรับ
 - คัดลอกเลขบัญชีได้จากหน้า card และหน้าดู QR เพื่อนำไปวางในแอปธนาคารอื่นได้เร็วขึ้น
 - **เรียกเก็บเงิน:** เลือกบัญชีปลายทางของตัวเอง ใส่จำนวนเงิน/รายละเอียด แล้วคัดลอกหรือแชร์คำขอรับเงินพร้อม QR
-- จำนวนเงินในคำขอรับเงินยังไม่ถูกฝังลง QR เดิมโดยอัตโนมัติ ผู้โอนต้องตรวจยอดก่อนยืนยัน
+- ถ้า QR ที่บันทึกไว้เป็น PromptPay/Thai QR Payment ที่อ่าน payload ได้ ระบบจะสร้าง **Dynamic PromptPay QR** ใหม่และฝังจำนวนเงินใน Tag 54 พร้อมคำนวณ CRC ใหม่
+- ถ้า QR ไม่ใช่ PromptPay หรืออ่าน payload ไม่ได้ ระบบจะ fallback เป็น QR เดิมและใส่ยอดในข้อความเรียกเก็บแทน
+- ใช้ BarcodeDetector เมื่อรองรับ และ fallback เป็น jsQR เพื่ออ่าน QR ข้าม browser
+- ใช้ qrcode-generator เพื่อสร้าง QR ใหม่ใน browser โดยไม่ส่ง payload ไป backend
 - แสดง QR แบบเต็มจอ
 - แชร์หรือดาวน์โหลด QR
 - แก้ไขและลบ QR
