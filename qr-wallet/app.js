@@ -35,6 +35,7 @@ const els = {
   previewWrap: document.querySelector("#previewWrap"),
   imagePreview: document.querySelector("#imagePreview"),
   cancelEditorBtn: document.querySelector("#cancelEditorBtn"),
+  closeEditorBtn: document.querySelector("#closeEditorBtn"),
   viewerDialog: document.querySelector("#viewerDialog"),
   viewerBank: document.querySelector("#viewerBank"),
   viewerCategory: document.querySelector("#viewerCategory"),
@@ -320,10 +321,13 @@ async function dataUrlToFile(dataUrl, filename = "qr-code.png") {
 els.addBtn.addEventListener("click", () => openEditor());
 els.emptyAddBtn.addEventListener("click", () => openEditor());
 
-els.cancelEditorBtn.addEventListener("click", () => {
+function closeEditor() {
   els.editorDialog.close();
   resetEditor();
-});
+}
+
+els.cancelEditorBtn.addEventListener("click", closeEditor);
+els.closeEditorBtn.addEventListener("click", closeEditor);
 
 els.imageInput.addEventListener("change", async () => {
   const file = els.imageInput.files?.[0];
