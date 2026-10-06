@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <meta name="description" content="รวม QR รับเงินหลายธนาคารไว้ในที่เดียวแบบ local-first" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="My QR" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icon.svg" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>My QR Wallet</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">LOCAL QR WALLET</p>
+        <h1>My QR</h1>
+        <p class="subtitle">รวม QR รับเงินของคุณไว้ในเครื่องเดียว</p>
+      </div>
+      <button id="installBtn" class="btn btn-secondary hidden" type="button">ติดตั้งแอป</button>
+    </header>
+
+    <section class="notice" aria-label="privacy notice">
+      <div>
+        <strong>ข้อมูลอยู่ในเครื่องนี้</strong>
+        <p>QR ที่เพิ่มจะเก็บในเบราว์เซอร์ของอุปกรณ์นี้ ไม่เชื่อมบัญชีธนาคารและไม่ส่งขึ้นเซิร์ฟเวอร์</p>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="toolbar-copy">
+        <h2>QR ของฉัน</h2>
+        <span id="countLabel" class="count-badge">0 รายการ</span>
+      </div>
+      <button id="addBtn" class="btn btn-primary" type="button">+ เพิ่ม QR</button>
+    </section>
+
+    <section id="emptyState" class="empty-state">
+      <div class="empty-icon" aria-hidden="true">▦</div>
+      <h3>ยังไม่มี QR</h3>
+      <p>เพิ่ม QR รับเงินจากแอปธนาคารหรือ PromptPay แล้วเรียกใช้ได้ทันที แม้ออฟไลน์</p>
+      <button id="emptyAddBtn" class="btn btn-primary" type="button">เพิ่ม QR แรก</button>
+    </section>
+
+    <section id="qrGrid" class="qr-grid" aria-live="polite"></section>
+
+    <footer class="footer">
+      <p>My QR เป็นกระเป๋า QR ส่วนตัว ไม่ใช่แอปอย่างเป็นทางการของธนาคารใด</p>
+    </footer>
+  </main>
+
+  <dialog id="editorDialog" class="dialog">
+    <form id="qrForm" method="dialog" class="dialog-card">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">QR WALLET</p>
+          <h2 id="editorTitle">เพิ่ม QR</h2>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="ปิด" type="submit">×</button>
+      </div>
+
+      <label class="field">
+        <span>ธนาคาร / ประเภท</span>
+        <select id="bankInput" required>
+          <option value="PromptPay">PromptPay</option>
+          <option value="SCB">SCB</option>
+          <option value="KBank">KBank</option>
+          <option value="Krungthai">Krungthai</option>
+          <option value="Bangkok Bank">Bangkok Bank</option>
+          <option value="Krungsri">Krungsri</option>
+          <option value="ttb">ttb</option>
+          <option value="Government Savings Bank">Government Savings Bank</option>
+          <option value="Other">อื่น ๆ</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>ชื่อที่ใช้เรียก <small>(เช่น บัญชีหลัก)</small></span>
+        <input id="labelInput" type="text" maxlength="60" placeholder="บัญชีหลัก" required />
+      </label>
+
+      <label class="field">
+        <span>ชื่อบัญชี <small>(ไม่บังคับ)</small></span>
+        <input id="accountInput" type="text" maxlength="100" placeholder="ชื่อเจ้าของบัญชี" />
+      </label>
+
+      <label class="field">
+        <span>รูป QR</span>
+        <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/*" />
+        <small id="imageHelp">รองรับ PNG, JPG, WebP แนะนำภาพคมชัดและไม่มีข้อมูลส่วนเกิน</small>
+      </label>
+
+      <div id="previewWrap" class="preview-wrap hidden">
+        <img id="imagePreview" alt="ตัวอย่าง QR" />
+      </div>
+
+      <div class="dialog-actions">
+        <button id="cancelEditorBtn" class="btn btn-secondary" type="button">ยกเลิก</button>
+        <button class="btn btn-primary" type="submit">บันทึก</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="viewerDialog" class="dialog viewer-dialog">
+    <section class="dialog-card viewer-card">
+      <div class="dialog-header">
+        <div>
+          <p id="viewerBank" class="eyebrow"></p>
+          <h2 id="viewerLabel"></h2>
+          <p id="viewerAccount" class="viewer-account"></p>
+        </div>
+        <button id="closeViewerBtn" class="icon-btn" aria-label="ปิด" type="button">×</button>
+      </div>
+
+      <div id="viewerQrWrap" class="viewer-qr-wrap">
+        <img id="viewerImage" alt="QR สำหรับรับเงิน" />
+      </div>
+
+      <div class="viewer-actions">
+        <button id="fullscreenBtn" class="btn btn-secondary" type="button">เต็มจอ</button>
+        <button id="shareBtn" class="btn btn-secondary" type="button">แชร์</button>
+        <button id="editBtn" class="btn btn-secondary" type="button">แก้ไข</button>
+        <button id="deleteBtn" class="btn btn-danger" type="button">ลบ</button>
+      </div>
+    </section>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
