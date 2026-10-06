@@ -11,6 +11,8 @@ const state = {
   pendingImage: null,
   deferredInstallPrompt: null,
   activeCategory: ALL_CATEGORIES,
+  scanFilledFields: new Set(),
+  scanning: false,
 };
 
 const els = {
@@ -32,6 +34,12 @@ const els = {
   accountNumberInput: document.querySelector("#accountNumberInput"),
   imageInput: document.querySelector("#imageInput"),
   imageHelp: document.querySelector("#imageHelp"),
+  scanBtn: document.querySelector("#scanBtn"),
+  clearScanBtn: document.querySelector("#clearScanBtn"),
+  scanStatus: document.querySelector("#scanStatus"),
+  scanStatusTitle: document.querySelector("#scanStatusTitle"),
+  scanStatusText: document.querySelector("#scanStatusText"),
+  scanSpinner: document.querySelector("#scanSpinner"),
   previewWrap: document.querySelector("#previewWrap"),
   imagePreview: document.querySelector("#imagePreview"),
   cancelEditorBtn: document.querySelector("#cancelEditorBtn"),
@@ -65,6 +73,281 @@ function showToast(message) {
   els.toast.classList.add("show");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => els.toast.classList.remove("show"), 2200);
+}
+
+function setScanStatus(title, text = "", busy = false) {
+  els.scanStatus.classList.remove("hidden");
+  els.scanStatusTitle.textContent = title;
+  els.scanStatusText.textContent = text;
+  els.scanSpinner.classList.toggle("hidden", !busy);
+}
+
+function markSmartFilled(element, key) {
+  if (!element) return;
+  element.classList.add("smart-filled");
+  state.scanFilledFields.add(key);
+  clearTimeout(element.smartFilledTimer);
+  element.smartFilledTimer = setTimeout(() => element.classList.remove("smart-filled"), 3200);
+}
+
+function setSmartValue(key, value, { overwrite = false } = {}) {
+  const map = {
+    bank: els.bankInput,
+    label: els.labelInput,
+    account: els.accountInput,
+    accountNumber: els.accountNumberInput,
+    category: els.categoryInput,
+  };
+  const element = map[key];
+  if (!element || value == null || String(value).trim() === "") return false;
+  if (!overwrite && String(element.value || "").trim()) return false;
+  element.value = String(value).trim();
+  markSmartFilled(element, key);
+  return true;
+}
+
+function cleanOcrLine(line) {
+  return String(line || "")
+    .replace(/[|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectBank(text) {
+  const normalized = String(text || "").toLowerCase();
+  const banks = [
+    { value: "SCB", terms: ["scb", "ไทยพาณิชย์", "siam commercial"] },
+    { value: "KBank", terms: ["kbank", "kasikorn", "กสิกรไทย", "กสิกร"] },
+    { value: "Krungthai", terms: ["krungthai", "krung thai", "กรุงไทย", "ktb"] },
+    { value: "Bangkok Bank", terms: ["bangkok bank", "ธนาคารกรุงเทพ", "bbl"] },
+    { value: "Krungsri", terms: ["krungsri", "กรุงศรี", "ayudhya"] },
+    { value: "ttb", terms: ["ttb", "ทีเอ็มบีธนชาต", "ทหารไทยธนชาต", "ทีทีบี"] },
+    { value: "Government Savings Bank", terms: ["ออมสิน", "government savings", "gsb"] },
+    { value: "PromptPay", terms: ["promptpay", "พร้อมเพย์", "พร้อม pay"] },
+  ];
+
+  for (const bank of banks) {
+    if (bank.terms.some((term) => normalized.includes(term.toLowerCase()))) return bank.value;
+  }
+  return "";
+}
+
+function scoreAccountCandidate(raw, line, lineIndex) {
+  const compact = raw.replace(/\s/g, "");
+  const digits = (compact.match(/\d/g) || []).length;
+  const masks = (compact.match(/[xX*•]/g) || []).length;
+  if (digits + masks < 8 || digits + masks > 16) return null;
+
+  let score = 0;
+  const lowerLine = line.toLowerCase();
+  if (/เลข(ที่)?บัญชี|account\s*(no|number)|a\/c/.test(lowerLine)) score += 8;
+  if (/บัญชี/.test(lowerLine)) score += 3;
+  if (/โทร|phone|mobile|promptpay|พร้อมเพย์/.test(lowerLine)) score -= 4;
+  if (/บาท|thb|ยอด|amount/.test(lowerLine)) score -= 5;
+  if (/[-–—]/.test(compact)) score += 2;
+  if (digits + masks === 10) score += 2;
+  if (/^0\d{9}$/.test(compact.replace(/[-–—]/g, ""))) score -= 2;
+  score -= lineIndex * 0.01;
+
+  return { value: compact.replace(/[–—]/g, "-"), score };
+}
+
+function extractAccountNumber(lines) {
+  const candidates = [];
+  lines.forEach((line, lineIndex) => {
+    const matches = line.match(/[0-9xX*•][0-9xX*•\-–—\s]{6,24}[0-9xX*•]/g) || [];
+    for (const raw of matches) {
+      const candidate = scoreAccountCandidate(raw, line, lineIndex);
+      if (candidate) candidates.push(candidate);
+    }
+  });
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.value || "";
+}
+
+function extractAccountName(lines) {
+  const keyword = /ชื่อบัญชี|ชื่อผู้รับ|account\s*name|beneficiary|recipient/i;
+  const bad = /ธนาคาร|bank|เลขบัญชี|account\s*(no|number)|พร้อมเพย์|promptpay|จำนวนเงิน|amount|บาท|thb|qr/i;
+  const honorific = /^(นาย|นางสาว|นาง|คุณ|ดร\.?|mr\.?|mrs\.?|ms\.?|บริษัท|บจก\.?|หจก\.?)/i;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!keyword.test(lines[i])) continue;
+    const sameLine = cleanOcrLine(lines[i].replace(keyword, ""));
+    if (sameLine.length >= 3 && !bad.test(sameLine)) return sameLine;
+    const next = cleanOcrLine(lines[i + 1]);
+    if (next.length >= 3 && !bad.test(next)) return next;
+  }
+
+  const preferred = lines.find((line) => {
+    const clean = cleanOcrLine(line);
+    return honorific.test(clean) && clean.length >= 5 && clean.length <= 80 && !bad.test(clean);
+  });
+  return preferred ? cleanOcrLine(preferred) : "";
+}
+
+function suggestCategory(accountName) {
+  if (/บริษัท|บจก|หจก|company|co\.?\s*[,]?\s*ltd|ร้าน/i.test(accountName || "")) return "ร้านค้า";
+  return "";
+}
+
+function lastVisibleDigits(value) {
+  const digits = String(value || "").match(/\d/g) || [];
+  return digits.slice(-4).join("");
+}
+
+async function prepareImageForOcr(dataUrl) {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+
+  const maxSide = 1800;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0, width, height);
+
+  const pixels = ctx.getImageData(0, 0, width, height);
+  const data = pixels.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+    const boosted = Math.max(0, Math.min(255, (gray - 128) * 1.22 + 128));
+    data[i] = boosted;
+    data[i + 1] = boosted;
+    data[i + 2] = boosted;
+  }
+  ctx.putImageData(pixels, 0, 0);
+
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+async function detectQrPayload(dataUrl) {
+  if (!("BarcodeDetector" in window)) return "";
+  try {
+    const supported = await BarcodeDetector.getSupportedFormats?.();
+    if (supported && !supported.includes("qr_code")) return "";
+    const detector = new BarcodeDetector({ formats: ["qr_code"] });
+    const image = new Image();
+    image.src = dataUrl;
+    await image.decode();
+    const results = await detector.detect(image);
+    return results[0]?.rawValue || "";
+  } catch {
+    return "";
+  }
+}
+
+function promptPayFromPayload(payload) {
+  const value = String(payload || "").toUpperCase();
+  return value.includes("A000000677010111") || value.includes("PROMPTPAY");
+}
+
+async function runSmartScan() {
+  if (!state.pendingImage || state.scanning) return;
+  if (!window.Tesseract?.recognize) {
+    setScanStatus("โหลด AI OCR ไม่สำเร็จ", "เชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง");
+    return;
+  }
+
+  state.scanning = true;
+  els.scanBtn.disabled = true;
+  els.clearScanBtn.classList.add("hidden");
+  setScanStatus("กำลังอ่านภาพ…", "กำลังตรวจ QR และเตรียมภาพ", true);
+
+  try {
+    const qrPayload = await detectQrPayload(state.pendingImage);
+    const ocrImage = await prepareImageForOcr(state.pendingImage);
+
+    const result = await window.Tesseract.recognize(ocrImage, "tha+eng", {
+      logger(message) {
+        if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+          const percent = Math.max(1, Math.round(message.progress * 100));
+          setScanStatus("กำลังอ่านข้อความ…", `${percent}% — ครั้งแรกอาจใช้เวลาสักครู่เพื่อโหลดโมเดลภาษา`, true);
+        }
+      },
+    });
+
+    const rawText = result?.data?.text || "";
+    const lines = rawText.split(/\r?\n/).map(cleanOcrLine).filter(Boolean);
+    const bank = promptPayFromPayload(qrPayload) ? "PromptPay" : detectBank(rawText);
+    const accountNumber = extractAccountNumber(lines);
+    const account = extractAccountName(lines);
+    const category = suggestCategory(account);
+
+    let filled = 0;
+    if (bank && els.bankInput.value !== bank) {
+      els.bankInput.value = bank;
+      markSmartFilled(els.bankInput, "bank");
+      filled += 1;
+    }
+    if (account && setSmartValue("account", account)) filled += 1;
+    if (accountNumber && setSmartValue("accountNumber", accountNumber)) filled += 1;
+    if (category && els.categoryInput.value === DEFAULT_CATEGORY && setSmartValue("category", category, { overwrite: true })) filled += 1;
+
+    if (!els.labelInput.value.trim()) {
+      const suffix = lastVisibleDigits(accountNumber);
+      const label = bank ? `${bank}${suffix ? ` • ${suffix}` : ""}` : "";
+      if (label && setSmartValue("label", label)) filled += 1;
+    }
+
+    els.clearScanBtn.classList.toggle("hidden", state.scanFilledFields.size === 0);
+
+    const qrMessage = qrPayload
+      ? (promptPayFromPayload(qrPayload) ? "พบ PromptPay QR" : "พบ QR")
+      : "ไม่พบ QR ที่เบราว์เซอร์อ่านได้";
+
+    if (filled > 0) {
+      setScanStatus(
+        `อ่านสำเร็จ • เติมให้ ${filled} ช่อง`,
+        `${qrMessage} — กรุณาตรวจชื่อและเลขบัญชีก่อนบันทึก`,
+        false,
+      );
+      showToast("Smart Scan เติมข้อมูลให้แล้ว");
+    } else {
+      setScanStatus(
+        "อ่านภาพเสร็จแล้ว",
+        `${qrMessage} แต่ยังไม่พบข้อมูลที่มั่นใจพอให้กรอกอัตโนมัติ กรุณากรอกเองหรือใช้ภาพที่ชัดขึ้น`,
+        false,
+      );
+    }
+  } catch (error) {
+    console.error("Smart Scan failed", error);
+    setScanStatus(
+      "อ่านภาพไม่สำเร็จ",
+      "ลองใช้ screenshot ที่คมชัดขึ้น หรือลองใหม่เมื่อเชื่อมต่ออินเทอร์เน็ตเพื่อโหลดโมเดล OCR",
+      false,
+    );
+  } finally {
+    state.scanning = false;
+    els.scanBtn.disabled = !state.pendingImage;
+  }
+}
+
+function clearSmartScanResults() {
+  const map = {
+    bank: els.bankInput,
+    label: els.labelInput,
+    account: els.accountInput,
+    accountNumber: els.accountNumberInput,
+    category: els.categoryInput,
+  };
+
+  for (const key of state.scanFilledFields) {
+    const element = map[key];
+    if (!element) continue;
+    if (key === "bank") element.value = "PromptPay";
+    else if (key === "category") element.value = DEFAULT_CATEGORY;
+    else element.value = "";
+    element.classList.remove("smart-filled");
+  }
+
+  state.scanFilledFields.clear();
+  els.clearScanBtn.classList.add("hidden");
+  els.scanStatus.classList.add("hidden");
 }
 
 function openDb() {
@@ -235,6 +518,8 @@ function render() {
 function resetEditor() {
   state.editingId = null;
   state.pendingImage = null;
+  state.scanFilledFields.clear();
+  state.scanning = false;
   els.editorTitle.textContent = "เพิ่ม QR";
   els.qrForm.reset();
   els.bankInput.value = "PromptPay";
@@ -242,7 +527,11 @@ function resetEditor() {
   els.previewWrap.classList.add("hidden");
   els.imagePreview.removeAttribute("src");
   els.imageInput.required = true;
-  els.imageHelp.textContent = "รองรับ PNG, JPG, WebP แนะนำภาพคมชัดและไม่มีข้อมูลส่วนเกิน";
+  els.imageHelp.textContent = "รองรับ PNG, JPG, WebP — ภาพชัดจะอ่านได้แม่นกว่า";
+  els.scanBtn.disabled = true;
+  els.clearScanBtn.classList.add("hidden");
+  els.scanStatus.classList.add("hidden");
+  els.scanSpinner.classList.add("hidden");
 }
 
 function openEditor(id = null) {
@@ -260,9 +549,10 @@ function openEditor(id = null) {
     els.accountInput.value = item.account || "";
     els.accountNumberInput.value = item.accountNumber || "";
     els.imageInput.required = false;
-    els.imageHelp.textContent = "ไม่ต้องเลือกรูปใหม่ หากต้องการใช้ QR เดิม";
+    els.imageHelp.textContent = "ไม่ต้องเลือกรูปใหม่ หากต้องการใช้ QR เดิม หรือกด Smart Scan เพื่ออ่านใหม่";
     els.imagePreview.src = item.image;
     els.previewWrap.classList.remove("hidden");
+    els.scanBtn.disabled = false;
   }
 
   els.editorDialog.showModal();
@@ -329,6 +619,9 @@ function closeEditor() {
 els.cancelEditorBtn.addEventListener("click", closeEditor);
 els.closeEditorBtn.addEventListener("click", closeEditor);
 
+els.scanBtn.addEventListener("click", runSmartScan);
+els.clearScanBtn.addEventListener("click", clearSmartScanResults);
+
 els.imageInput.addEventListener("change", async () => {
   const file = els.imageInput.files?.[0];
   if (!file) return;
@@ -337,6 +630,10 @@ els.imageInput.addEventListener("change", async () => {
     state.pendingImage = await fileToDataUrl(file);
     els.imagePreview.src = state.pendingImage;
     els.previewWrap.classList.remove("hidden");
+    els.scanBtn.disabled = false;
+    els.scanStatus.classList.add("hidden");
+    state.scanFilledFields.clear();
+    els.clearScanBtn.classList.add("hidden");
   } catch (error) {
     els.imageInput.value = "";
     showToast(error.message || "เลือกรูปไม่สำเร็จ");
