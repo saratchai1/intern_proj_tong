@@ -240,6 +240,93 @@ h2, h3, p { margin-top: 0; }
   white-space: nowrap;
 }
 
+.category-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 14px;
+  scrollbar-width: none;
+}
+
+.category-filters::-webkit-scrollbar { display: none; }
+
+.category-filter {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.category-filter.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.filtered-empty {
+  margin: 8px 0 18px;
+  padding: 22px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 18px;
+  text-align: center;
+  color: var(--muted);
+  background: rgba(255,255,255,.55);
+}
+
+.filtered-empty p { margin: 0; }
+
+.card-tags,
+.viewer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-tags {
+  margin-bottom: 7px;
+}
+
+.card-tags .bank-pill {
+  margin-bottom: 0;
+}
+
+.category-pill {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.account-number,
+.viewer-account-number {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+.viewer-tags {
+  margin-bottom: 8px;
+}
+
+.viewer-tags .bank-pill {
+  margin-bottom: 0;
+}
+
+.viewer-account-number {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-weight: 700;
+}
+
 .footer {
   padding: 28px 6px 0;
   color: var(--muted);

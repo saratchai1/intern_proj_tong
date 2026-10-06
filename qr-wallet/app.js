@@ -1,6 +1,8 @@
 const DB_NAME = "my-qr-wallet";
 const DB_VERSION = 1;
 const STORE_NAME = "qr-items";
+const ALL_CATEGORIES = "ทั้งหมด";
+const DEFAULT_CATEGORY = "ทั่วไป";
 
 const state = {
   items: [],
@@ -8,6 +10,7 @@ const state = {
   viewingId: null,
   pendingImage: null,
   deferredInstallPrompt: null,
+  activeCategory: ALL_CATEGORIES,
 };
 
 const els = {
@@ -15,23 +18,30 @@ const els = {
   emptyAddBtn: document.querySelector("#emptyAddBtn"),
   installBtn: document.querySelector("#installBtn"),
   emptyState: document.querySelector("#emptyState"),
+  filteredEmptyState: document.querySelector("#filteredEmptyState"),
   qrGrid: document.querySelector("#qrGrid"),
   countLabel: document.querySelector("#countLabel"),
+  categoryFilters: document.querySelector("#categoryFilters"),
   editorDialog: document.querySelector("#editorDialog"),
   editorTitle: document.querySelector("#editorTitle"),
   qrForm: document.querySelector("#qrForm"),
   bankInput: document.querySelector("#bankInput"),
+  categoryInput: document.querySelector("#categoryInput"),
   labelInput: document.querySelector("#labelInput"),
   accountInput: document.querySelector("#accountInput"),
+  accountNumberInput: document.querySelector("#accountNumberInput"),
   imageInput: document.querySelector("#imageInput"),
   imageHelp: document.querySelector("#imageHelp"),
   previewWrap: document.querySelector("#previewWrap"),
   imagePreview: document.querySelector("#imagePreview"),
   cancelEditorBtn: document.querySelector("#cancelEditorBtn"),
+  closeEditorBtn: document.querySelector("#closeEditorBtn"),
   viewerDialog: document.querySelector("#viewerDialog"),
   viewerBank: document.querySelector("#viewerBank"),
+  viewerCategory: document.querySelector("#viewerCategory"),
   viewerLabel: document.querySelector("#viewerLabel"),
   viewerAccount: document.querySelector("#viewerAccount"),
+  viewerAccountNumber: document.querySelector("#viewerAccountNumber"),
   viewerImage: document.querySelector("#viewerImage"),
   viewerQrWrap: document.querySelector("#viewerQrWrap"),
   closeViewerBtn: document.querySelector("#closeViewerBtn"),
@@ -44,6 +54,10 @@ const els = {
 
 function uid() {
   return crypto.randomUUID?.() || `qr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeCategory(item) {
+  return item?.category?.trim() || DEFAULT_CATEGORY;
 }
 
 function showToast(message) {
@@ -110,13 +124,59 @@ function itemById(id) {
   return state.items.find((item) => item.id === id);
 }
 
+function renderCategoryFilters() {
+  const categories = [...new Set(state.items.map(normalizeCategory))]
+    .sort((a, b) => a.localeCompare(b, "th"));
+
+  if (state.activeCategory !== ALL_CATEGORIES && !categories.includes(state.activeCategory)) {
+    state.activeCategory = ALL_CATEGORIES;
+  }
+
+  els.categoryFilters.replaceChildren();
+  els.categoryFilters.classList.toggle("hidden", state.items.length === 0);
+
+  if (state.items.length === 0) return;
+
+  for (const category of [ALL_CATEGORIES, ...categories]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "category-filter";
+    button.textContent = category;
+    button.setAttribute("aria-pressed", String(state.activeCategory === category));
+
+    if (state.activeCategory === category) {
+      button.classList.add("active");
+    }
+
+    button.addEventListener("click", () => {
+      state.activeCategory = category;
+      render();
+    });
+
+    els.categoryFilters.append(button);
+  }
+}
+
 function render() {
-  const items = [...state.items].sort((a, b) => b.updatedAt - a.updatedAt);
+  const allItems = [...state.items].sort((a, b) => b.updatedAt - a.updatedAt);
+  renderCategoryFilters();
+
+  const items = state.activeCategory === ALL_CATEGORIES
+    ? allItems
+    : allItems.filter((item) => normalizeCategory(item) === state.activeCategory);
+
   els.qrGrid.replaceChildren();
 
-  els.countLabel.textContent = `${items.length} รายการ`;
-  els.emptyState.classList.toggle("hidden", items.length > 0);
-  els.qrGrid.classList.toggle("hidden", items.length === 0);
+  els.countLabel.textContent = state.activeCategory === ALL_CATEGORIES
+    ? `${allItems.length} รายการ`
+    : `${items.length}/${allItems.length} รายการ`;
+
+  const hasAny = allItems.length > 0;
+  const hasVisible = items.length > 0;
+
+  els.emptyState.classList.toggle("hidden", hasAny);
+  els.filteredEmptyState.classList.toggle("hidden", !hasAny || hasVisible);
+  els.qrGrid.classList.toggle("hidden", !hasVisible);
 
   for (const item of items) {
     const card = document.createElement("button");
@@ -135,19 +195,35 @@ function render() {
     const meta = document.createElement("div");
     meta.className = "qr-card-meta";
 
+    const tags = document.createElement("div");
+    tags.className = "card-tags";
+
     const bank = document.createElement("span");
     bank.className = "bank-pill";
     bank.textContent = item.bank;
 
+    const category = document.createElement("span");
+    category.className = "category-pill";
+    category.textContent = normalizeCategory(item);
+
+    tags.append(bank, category);
+
     const title = document.createElement("h3");
     title.textContent = item.label;
 
-    meta.append(bank, title);
+    meta.append(tags, title);
 
     if (item.account) {
       const account = document.createElement("p");
       account.textContent = item.account;
       meta.append(account);
+    }
+
+    if (item.accountNumber) {
+      const accountNumber = document.createElement("p");
+      accountNumber.className = "account-number";
+      accountNumber.textContent = item.accountNumber;
+      meta.append(accountNumber);
     }
 
     card.append(thumb, meta);
@@ -162,6 +238,7 @@ function resetEditor() {
   els.editorTitle.textContent = "เพิ่ม QR";
   els.qrForm.reset();
   els.bankInput.value = "PromptPay";
+  els.categoryInput.value = DEFAULT_CATEGORY;
   els.previewWrap.classList.add("hidden");
   els.imagePreview.removeAttribute("src");
   els.imageInput.required = true;
@@ -178,8 +255,10 @@ function openEditor(id = null) {
     state.pendingImage = item.image;
     els.editorTitle.textContent = "แก้ไข QR";
     els.bankInput.value = item.bank;
+    els.categoryInput.value = normalizeCategory(item);
     els.labelInput.value = item.label;
     els.accountInput.value = item.account || "";
+    els.accountNumberInput.value = item.accountNumber || "";
     els.imageInput.required = false;
     els.imageHelp.textContent = "ไม่ต้องเลือกรูปใหม่ หากต้องการใช้ QR เดิม";
     els.imagePreview.src = item.image;
@@ -195,9 +274,16 @@ function openViewer(id) {
 
   state.viewingId = id;
   els.viewerBank.textContent = item.bank;
+  els.viewerCategory.textContent = normalizeCategory(item);
   els.viewerLabel.textContent = item.label;
   els.viewerAccount.textContent = item.account || "";
   els.viewerAccount.classList.toggle("hidden", !item.account);
+
+  els.viewerAccountNumber.textContent = item.accountNumber
+    ? `เลขบัญชี ${item.accountNumber}`
+    : "";
+  els.viewerAccountNumber.classList.toggle("hidden", !item.accountNumber);
+
   els.viewerImage.src = item.image;
   els.viewerDialog.showModal();
 }
@@ -235,10 +321,13 @@ async function dataUrlToFile(dataUrl, filename = "qr-code.png") {
 els.addBtn.addEventListener("click", () => openEditor());
 els.emptyAddBtn.addEventListener("click", () => openEditor());
 
-els.cancelEditorBtn.addEventListener("click", () => {
+function closeEditor() {
   els.editorDialog.close();
   resetEditor();
-});
+}
+
+els.cancelEditorBtn.addEventListener("click", closeEditor);
+els.closeEditorBtn.addEventListener("click", closeEditor);
 
 els.imageInput.addEventListener("change", async () => {
   const file = els.imageInput.files?.[0];
@@ -268,8 +357,10 @@ els.qrForm.addEventListener("submit", async (event) => {
   const item = {
     id: previous?.id || uid(),
     bank: els.bankInput.value,
+    category: els.categoryInput.value.trim() || DEFAULT_CATEGORY,
     label: els.labelInput.value.trim(),
     account: els.accountInput.value.trim(),
+    accountNumber: els.accountNumberInput.value.trim(),
     image: state.pendingImage,
     createdAt: previous?.createdAt || now,
     updatedAt: now,
@@ -286,6 +377,7 @@ els.qrForm.addEventListener("submit", async (event) => {
     if (index >= 0) state.items[index] = item;
     else state.items.push(item);
 
+    state.activeCategory = normalizeCategory(item);
     els.editorDialog.close();
     resetEditor();
     render();
@@ -311,7 +403,10 @@ els.shareBtn.addEventListener("click", async () => {
   if (!item) return;
 
   try {
-    const file = await dataUrlToFile(item.image, `${item.label.replace(/[^a-zA-Z0-9ก-๙_-]+/g, "-") || "qr"}-qr.png`);
+    const file = await dataUrlToFile(
+      item.image,
+      `${item.label.replace(/[^a-zA-Z0-9ก-๙_-]+/g, "-") || "qr"}-qr.png`,
+    );
 
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({
