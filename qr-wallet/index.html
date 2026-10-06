@@ -28,7 +28,7 @@
     <section class="notice" aria-label="privacy notice">
       <div>
         <strong>ข้อมูลอยู่ในเครื่องนี้</strong>
-        <p>QR เลขบัญชี และข้อมูลที่เพิ่มจะเก็บในเบราว์เซอร์ของอุปกรณ์นี้ ไม่เชื่อมบัญชีธนาคารและไม่ส่งขึ้นเซิร์ฟเวอร์</p>
+        <p>QR เลขบัญชี และข้อมูลที่เพิ่มจะเก็บในเบราว์เซอร์ของอุปกรณ์นี้ ส่วน Smart Scan อ่านข้อความจากภาพในเครื่อง ไม่อัปโหลดภาพไปเซิร์ฟเวอร์</p>
       </div>
     </section>
 
@@ -69,6 +69,40 @@
         </div>
         <button id="closeEditorBtn" class="icon-btn" aria-label="ปิด" type="button">×</button>
       </div>
+
+      <section class="smart-scan">
+        <div class="smart-scan-heading">
+          <div>
+            <p class="smart-scan-kicker">SMART SCAN</p>
+            <h3>ใส่รูปแล้วให้ระบบอ่านให้</h3>
+          </div>
+          <span class="local-badge">ประมวลผลในเครื่อง</span>
+        </div>
+        <p class="smart-scan-copy">เลือกรูป QR หรือ screenshot จากแอปธนาคาร แล้วระบบจะพยายามอ่านธนาคาร ชื่อบัญชี และเลขบัญชีให้อัตโนมัติ</p>
+
+        <label class="field image-field">
+          <span>รูป QR / ภาพจากแอปธนาคาร</span>
+          <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/*" capture="environment" />
+          <small id="imageHelp">รองรับ PNG, JPG, WebP — ภาพชัดจะอ่านได้แม่นกว่า</small>
+        </label>
+
+        <div class="scan-actions">
+          <button id="scanBtn" class="btn btn-primary" type="button" disabled>✨ อ่านข้อมูลจากรูป</button>
+          <button id="clearScanBtn" class="btn btn-secondary hidden" type="button">ล้างผลอ่าน</button>
+        </div>
+
+        <div id="scanStatus" class="scan-status hidden" role="status" aria-live="polite">
+          <div class="scan-status-row">
+            <span id="scanSpinner" class="scan-spinner hidden" aria-hidden="true"></span>
+            <strong id="scanStatusTitle">พร้อมอ่านข้อมูล</strong>
+          </div>
+          <p id="scanStatusText"></p>
+        </div>
+
+        <div id="previewWrap" class="preview-wrap hidden">
+          <img id="imagePreview" alt="ตัวอย่าง QR" />
+        </div>
+      </section>
 
       <label class="field">
         <span>ธนาคาร / ประเภท</span>
@@ -113,14 +147,9 @@
         <input id="accountNumberInput" type="text" inputmode="numeric" autocomplete="off" maxlength="40" placeholder="เช่น 123-4-56789-0" />
       </label>
 
-      <label class="field">
-        <span>รูป QR</span>
-        <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/*" />
-        <small id="imageHelp">รองรับ PNG, JPG, WebP แนะนำภาพคมชัดและไม่มีข้อมูลส่วนเกิน</small>
-      </label>
-
-      <div id="previewWrap" class="preview-wrap hidden">
-        <img id="imagePreview" alt="ตัวอย่าง QR" />
+      <div class="scan-review-note">
+        <strong>ตรวจข้อมูลก่อนบันทึก</strong>
+        <span>Smart Scan ช่วยกรอกให้เร็วขึ้น แต่ไม่ควรเดาตัวเลขที่ภาพปิดบังหรืออ่านไม่ชัด</span>
       </div>
 
       <div class="dialog-actions">
@@ -160,6 +189,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
