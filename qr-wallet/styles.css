@@ -337,6 +337,16 @@ h2, h3, p { margin-top: 0; }
   box-shadow: none !important;
 }
 
+.request-scope-note {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .payment-request-card {
   margin-top: 16px;
   padding: 16px;
