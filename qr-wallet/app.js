@@ -13,6 +13,7 @@ const state = {
   activeCategory: ALL_CATEGORIES,
   scanFilledFields: new Set(),
   scanning: false,
+  requestAccountId: null,
 };
 
 const els = {
@@ -49,14 +50,40 @@ const els = {
   viewerCategory: document.querySelector("#viewerCategory"),
   viewerLabel: document.querySelector("#viewerLabel"),
   viewerAccount: document.querySelector("#viewerAccount"),
+  viewerAccountNumberRow: document.querySelector("#viewerAccountNumberRow"),
   viewerAccountNumber: document.querySelector("#viewerAccountNumber"),
+  copyViewerAccountBtn: document.querySelector("#copyViewerAccountBtn"),
   viewerImage: document.querySelector("#viewerImage"),
   viewerQrWrap: document.querySelector("#viewerQrWrap"),
   closeViewerBtn: document.querySelector("#closeViewerBtn"),
   fullscreenBtn: document.querySelector("#fullscreenBtn"),
   shareBtn: document.querySelector("#shareBtn"),
+  requestFromViewerBtn: document.querySelector("#requestFromViewerBtn"),
   editBtn: document.querySelector("#editBtn"),
   deleteBtn: document.querySelector("#deleteBtn"),
+  requestMoneyBtn: document.querySelector("#requestMoneyBtn"),
+  requestDialog: document.querySelector("#requestDialog"),
+  requestForm: document.querySelector("#requestForm"),
+  closeRequestBtn: document.querySelector("#closeRequestBtn"),
+  requestAccountSelect: document.querySelector("#requestAccountSelect"),
+  requestAccountSummary: document.querySelector("#requestAccountSummary"),
+  requestAccountLabel: document.querySelector("#requestAccountLabel"),
+  requestAccountMeta: document.querySelector("#requestAccountMeta"),
+  copyRequestAccountBtn: document.querySelector("#copyRequestAccountBtn"),
+  requestAmountInput: document.querySelector("#requestAmountInput"),
+  requestNoteInput: document.querySelector("#requestNoteInput"),
+  requestPreview: document.querySelector("#requestPreview"),
+  requestPreviewLabel: document.querySelector("#requestPreviewLabel"),
+  requestPreviewBank: document.querySelector("#requestPreviewBank"),
+  requestPreviewAmount: document.querySelector("#requestPreviewAmount"),
+  requestPreviewQr: document.querySelector("#requestPreviewQr"),
+  requestPreviewName: document.querySelector("#requestPreviewName"),
+  requestPreviewNumberRow: document.querySelector("#requestPreviewNumberRow"),
+  requestPreviewNumber: document.querySelector("#requestPreviewNumber"),
+  requestPreviewNoteRow: document.querySelector("#requestPreviewNoteRow"),
+  requestPreviewNote: document.querySelector("#requestPreviewNote"),
+  copyRequestTextBtn: document.querySelector("#copyRequestTextBtn"),
+  shareRequestBtn: document.querySelector("#shareRequestBtn"),
   toast: document.querySelector("#toast"),
 };
 
@@ -462,10 +489,13 @@ function render() {
   els.qrGrid.classList.toggle("hidden", !hasVisible);
 
   for (const item of items) {
-    const card = document.createElement("button");
-    card.type = "button";
+    const card = document.createElement("article");
     card.className = "qr-card";
-    card.setAttribute("aria-label", `เปิด ${item.label}`);
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "qr-card-main";
+    openButton.setAttribute("aria-label", `เปิด ${item.label}`);
 
     const thumb = document.createElement("div");
     thumb.className = "qr-thumb";
@@ -509,8 +539,24 @@ function render() {
       meta.append(accountNumber);
     }
 
-    card.append(thumb, meta);
-    card.addEventListener("click", () => openViewer(item.id));
+    openButton.append(thumb, meta);
+    openButton.addEventListener("click", () => openViewer(item.id));
+    card.append(openButton);
+
+    if (item.accountNumber) {
+      const actions = document.createElement("div");
+      actions.className = "qr-card-actions";
+
+      const copyButton = document.createElement("button");
+      copyButton.type = "button";
+      copyButton.className = "btn btn-secondary btn-card-copy";
+      copyButton.textContent = "คัดลอกเลขบัญชี";
+      copyButton.addEventListener("click", () => copyAccountNumber(item));
+
+      actions.append(copyButton);
+      card.append(actions);
+    }
+
     els.qrGrid.append(card);
   }
 }
@@ -572,7 +618,7 @@ function openViewer(id) {
   els.viewerAccountNumber.textContent = item.accountNumber
     ? `เลขบัญชี ${item.accountNumber}`
     : "";
-  els.viewerAccountNumber.classList.toggle("hidden", !item.accountNumber);
+  els.viewerAccountNumberRow.classList.toggle("hidden", !item.accountNumber);
 
   els.viewerImage.src = item.image;
   els.viewerDialog.showModal();
@@ -581,6 +627,203 @@ function openViewer(id) {
 function closeViewer() {
   state.viewingId = null;
   els.viewerDialog.close();
+}
+
+async function copyText(text, successMessage = "คัดลอกแล้ว") {
+  const value = String(text || "").trim();
+  if (!value) {
+    showToast("ไม่มีข้อมูลให้คัดลอก");
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast(successMessage);
+    return true;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+
+    if (copied) {
+      showToast(successMessage);
+      return true;
+    }
+
+    showToast("คัดลอกไม่สำเร็จ");
+    return false;
+  }
+}
+
+function accountNumberForClipboard(item) {
+  const raw = String(item?.accountNumber || "").trim();
+  if (!raw) return "";
+  if (/[xX*•]/.test(raw)) return raw;
+  const digits = raw.replace(/\D/g, "");
+  return digits || raw;
+}
+
+function copyAccountNumber(item) {
+  const value = accountNumberForClipboard(item);
+  if (!value) {
+    showToast("บัญชีนี้ยังไม่มีเลขบัญชี");
+    return;
+  }
+
+  const masked = /[xX*•]/.test(value);
+  copyText(
+    value,
+    masked ? "คัดลอกเลขที่แสดงแล้ว (มีตัวปิดบัง)" : "คัดลอกเลขบัญชีแล้ว",
+  );
+}
+
+function formatAmount(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: amount % 1 ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function populateRequestAccounts(preferredId = null) {
+  const items = [...state.items].sort((a, b) => b.updatedAt - a.updatedAt);
+  els.requestAccountSelect.replaceChildren();
+
+  for (const item of items) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    const suffix = item.accountNumber
+      ? ` • ${String(item.accountNumber).replace(/\s/g, "").slice(-6)}`
+      : "";
+    option.textContent = `${item.label} — ${item.bank}${suffix}`;
+    els.requestAccountSelect.append(option);
+  }
+
+  const preferred = preferredId && items.some((item) => item.id === preferredId)
+    ? preferredId
+    : items[0]?.id;
+
+  if (preferred) {
+    els.requestAccountSelect.value = preferred;
+    state.requestAccountId = preferred;
+  }
+}
+
+function selectedRequestItem() {
+  return itemById(els.requestAccountSelect.value || state.requestAccountId);
+}
+
+function buildRequestText(item) {
+  if (!item) return "";
+
+  const amount = formatAmount(els.requestAmountInput.value);
+  const note = els.requestNoteInput.value.trim();
+  const lines = [];
+
+  lines.push(amount ? `ขอรับเงิน ฿${amount}` : "ขอรับเงิน");
+  lines.push(`เข้าบัญชี: ${item.label}`);
+  lines.push(`ธนาคาร/ประเภท: ${item.bank}`);
+  if (item.account) lines.push(`ชื่อบัญชี: ${item.account}`);
+  if (item.accountNumber) lines.push(`เลขบัญชี: ${item.accountNumber}`);
+  if (note) lines.push(`รายละเอียด: ${note}`);
+  lines.push("กรุณาตรวจชื่อผู้รับในแอปธนาคารก่อนยืนยันการโอน");
+
+  return lines.join("\n");
+}
+
+function updateRequestPreview() {
+  const item = selectedRequestItem();
+  if (!item) {
+    els.requestAccountSummary.classList.add("hidden");
+    els.requestPreview.classList.add("hidden");
+    return;
+  }
+
+  state.requestAccountId = item.id;
+
+  const amount = formatAmount(els.requestAmountInput.value);
+  const note = els.requestNoteInput.value.trim();
+
+  els.requestAccountSummary.classList.remove("hidden");
+  els.requestAccountLabel.textContent = item.label;
+  els.requestAccountMeta.textContent = [
+    item.bank,
+    item.account || "",
+    item.accountNumber || "",
+  ].filter(Boolean).join(" • ");
+  els.copyRequestAccountBtn.classList.toggle("hidden", !item.accountNumber);
+
+  els.requestPreview.classList.remove("hidden");
+  els.requestPreviewLabel.textContent = item.label;
+  els.requestPreviewBank.textContent = item.bank;
+  els.requestPreviewAmount.textContent = amount ? `฿${amount}` : "";
+  els.requestPreviewQr.src = item.image;
+  els.requestPreviewName.textContent = item.account || "-";
+  els.requestPreviewNumber.textContent = item.accountNumber || "-";
+  els.requestPreviewNumberRow.classList.toggle("hidden", !item.accountNumber);
+  els.requestPreviewNote.textContent = note;
+  els.requestPreviewNoteRow.classList.toggle("hidden", !note);
+}
+
+function openRequestDialog(preferredId = null) {
+  if (state.items.length === 0) {
+    showToast("เพิ่มบัญชีหรือ QR ก่อนเรียกเก็บเงิน");
+    return;
+  }
+
+  els.requestForm.reset();
+  populateRequestAccounts(preferredId);
+  updateRequestPreview();
+  els.requestDialog.showModal();
+}
+
+function closeRequestDialog() {
+  els.requestDialog.close();
+  state.requestAccountId = null;
+}
+
+async function sharePaymentRequest() {
+  const item = selectedRequestItem();
+  if (!item) return;
+
+  const text = buildRequestText(item);
+
+  try {
+    const file = await dataUrlToFile(
+      item.image,
+      `${item.label.replace(/[^a-zA-Z0-9ก-๙_-]+/g, "-") || "payment"}-qr.png`,
+    );
+
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({
+        title: `ขอรับเงิน • ${item.label}`,
+        text,
+        files: [file],
+      });
+      return;
+    }
+
+    if (navigator.share) {
+      await navigator.share({
+        title: `ขอรับเงิน • ${item.label}`,
+        text,
+      });
+      return;
+    }
+
+    await copyText(text, "คัดลอกคำขอรับเงินแล้ว");
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      await copyText(text, "แชร์ไม่ได้ จึงคัดลอกข้อความให้แล้ว");
+    }
+  }
 }
 
 function fileToDataUrl(file) {
@@ -610,6 +853,7 @@ async function dataUrlToFile(dataUrl, filename = "qr-code.png") {
 
 els.addBtn.addEventListener("click", () => openEditor());
 els.emptyAddBtn.addEventListener("click", () => openEditor());
+els.requestMoneyBtn.addEventListener("click", () => openRequestDialog());
 
 function closeEditor() {
   els.editorDialog.close();
@@ -685,6 +929,34 @@ els.qrForm.addEventListener("submit", async (event) => {
 });
 
 els.closeViewerBtn.addEventListener("click", closeViewer);
+
+els.copyViewerAccountBtn.addEventListener("click", () => {
+  const item = itemById(state.viewingId);
+  if (item) copyAccountNumber(item);
+});
+
+els.requestFromViewerBtn.addEventListener("click", () => {
+  const id = state.viewingId;
+  closeViewer();
+  openRequestDialog(id);
+});
+
+els.closeRequestBtn.addEventListener("click", closeRequestDialog);
+els.requestAccountSelect.addEventListener("change", updateRequestPreview);
+els.requestAmountInput.addEventListener("input", updateRequestPreview);
+els.requestNoteInput.addEventListener("input", updateRequestPreview);
+
+els.copyRequestAccountBtn.addEventListener("click", () => {
+  const item = selectedRequestItem();
+  if (item) copyAccountNumber(item);
+});
+
+els.copyRequestTextBtn.addEventListener("click", () => {
+  const item = selectedRequestItem();
+  if (item) copyText(buildRequestText(item), "คัดลอกคำขอรับเงินแล้ว");
+});
+
+els.shareRequestBtn.addEventListener("click", sharePaymentRequest);
 
 els.fullscreenBtn.addEventListener("click", async () => {
   try {
