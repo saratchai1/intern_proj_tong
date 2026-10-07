@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Deterministic equity valuation screener and comparison lab." />
+  <title>Undervalue Lab</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">EQUITY RESEARCH WORKBENCH</p>
+        <h1>Undervalue Lab</h1>
+        <p class="subtitle">Screen, value, compare, and challenge long-term equity ideas with explicit assumptions.</p>
+      </div>
+      <div class="topbar-actions">
+        <span class="status-pill" id="dataStatus">Research snapshot</span>
+        <button class="ghost" id="liveBtn">Refresh live prices</button>\n        <button class="ghost" id="exportBtn">Export CSV</button>
+        <label class="button ghost" for="importInput">Import JSON</label>
+        <input id="importInput" type="file" accept=".json,application/json" hidden />
+      </div>
+    </header>
+
+    <section class="notice">
+      <strong>Important:</strong> the bundled dataset is a dated research snapshot, not live market data and not investment advice.
+      The valuation engine is deterministic; narrative fields and fair-value assumptions are research notes. Live prices are refreshed server-side when available, while fundamentals remain the dated research snapshot.
+    </section>
+
+    <main>
+      <section class="hero-grid">
+        <article class="card metric-card">
+          <span>Universe</span>
+          <strong id="universeCount">0</strong>
+          <small>companies in current dataset</small>
+        </article>
+        <article class="card metric-card">
+          <span>Passing filters</span>
+          <strong id="passingCount">0</strong>
+          <small>sorted by selected metric</small>
+        </article>
+        <article class="card metric-card">
+          <span>Median base upside</span>
+          <strong id="medianUpside">—</strong>
+          <small>model snapshot</small>
+        </article>
+        <article class="card metric-card">
+          <span>Highest score</span>
+          <strong id="topScore">—</strong>
+          <small>quality + value + risk/reward</small>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="card filters">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">SCREEN</p>
+              <h2>Filters</h2>
+            </div>
+            <button class="text-button" id="resetFilters">Reset</button>
+          </div>
+
+          <label>
+            Search ticker / company
+            <input id="searchInput" type="search" placeholder="e.g. UBER, Booking" />
+          </label>
+
+          <label>
+            Sector
+            <select id="sectorFilter"><option value="all">All sectors</option></select>
+          </label>
+
+          <label>
+            Minimum market cap
+            <div class="input-affix"><span>$</span><input id="minMarketCap" type="number" value="100" min="0" step="10" /><span>B</span></div>
+          </label>
+
+          <label>
+            Minimum FCF yield
+            <div class="input-affix"><input id="minFcfYield" type="number" value="0" min="0" step="0.5" /><span>%</span></div>
+          </label>
+
+          <label>
+            Minimum ROIC
+            <div class="input-affix"><input id="minRoic" type="number" value="0" min="-100" step="1" /><span>%</span></div>
+          </label>
+
+          <label>
+            Minimum base upside
+            <div class="input-affix"><input id="minUpside" type="number" value="0" step="5" /><span>%</span></div>
+          </label>
+
+          <label>
+            Value-trap risk
+            <select id="trapFilter">
+              <option value="all">All</option>
+              <option value="Low">Low only</option>
+              <option value="Low–Med">Low–Med or better</option>
+            </select>
+          </label>
+
+          <label>
+            Sort by
+            <select id="sortBy">
+              <option value="score">Score</option>
+              <option value="upside">Base upside</option>
+              <option value="fcfYield">FCF yield</option>
+              <option value="roic">ROIC</option>
+              <option value="expected5Y">5Y expected CAGR</option>
+              <option value="marketCap">Market cap</option>
+            </select>
+          </label>
+
+          <div class="preset-grid">
+            <button class="preset" data-preset="quality">Quality value</button>
+            <button class="preset" data-preset="deep">Deep value</button>
+            <button class="preset" data-preset="garp">GARP</button>
+            <button class="preset" data-preset="compounder">Compounders</button>
+          </div>
+        </aside>
+
+        <div class="main-column">
+          <section class="card table-card">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">DISCOVER</p>
+                <h2>Undervalue screener</h2>
+              </div>
+              <div class="compare-hint"><span id="compareCount">0</span>/5 selected to compare</div>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Rank</th>
+                    <th>Ticker</th>
+                    <th>Company</th>
+                    <th>Mkt cap</th>
+                    <th>Price</th>
+                    <th>Fwd P/E</th>
+                    <th>FCF yield</th>
+                    <th>Rev growth</th>
+                    <th>ROIC</th>
+                    <th>Base FV</th>
+                    <th>Upside</th>
+                    <th>5Y CAGR</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody id="stockRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="card" id="detailCard">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">RESEARCH</p>
+                <h2 id="detailTitle">Select a company</h2>
+              </div>
+              <button id="watchBtn" class="ghost" disabled>Add to watchlist</button>
+            </div>
+            <div id="detailBody" class="empty-state">
+              Click a ticker in the screener to inspect valuation, market expectations, catalysts, risks, and value-trap flags.
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="card compare-card">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">COMPARE</p>
+            <h2>Head-to-head</h2>
+          </div>
+          <button class="text-button" id="clearCompare">Clear</button>
+        </div>
+        <div id="compareArea" class="empty-state">Select 2–5 companies from the screener.</div>
+      </section>
+
+      <section class="valuation-grid">
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">MODEL</p>
+              <h2>DCF playground</h2>
+            </div>
+            <span id="dcfTicker" class="ticker-chip">—</span>
+          </div>
+          <div id="dcfArea" class="empty-state">Select a non-bank company to run the deterministic DCF.</div>
+        </section>
+
+        <section class="card">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">EXPECTATIONS</p>
+              <h2>Reverse DCF</h2>
+            </div>
+          </div>
+          <div id="reverseArea" class="empty-state">Select a company to estimate the FCF growth embedded in its current price.</div>
+        </section>
+      </section>
+    </main>
+
+    <footer>
+      <span>Undervalue Lab MVP</span>
+      <span>Deterministic valuation first; narrative second.</span>
+    </footer>
+  </div>
+
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
