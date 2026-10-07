@@ -17,7 +17,7 @@
       </div>
       <div class="topbar-actions">
         <span class="status-pill" id="dataStatus">Research snapshot</span>
-        <button class="ghost" id="exportBtn">Export CSV</button>
+        <button class="ghost" id="liveBtn">Refresh live prices</button>\n        <button class="ghost" id="exportBtn">Export CSV</button>
         <label class="button ghost" for="importInput">Import JSON</label>
         <input id="importInput" type="file" accept=".json,application/json" hidden />
       </div>
@@ -25,7 +25,7 @@
 
     <section class="notice">
       <strong>Important:</strong> the bundled dataset is a dated research snapshot, not live market data and not investment advice.
-      The valuation engine is deterministic; narrative fields are research notes. Replace the snapshot through JSON import or a future server-side data adapter.
+      The valuation engine is deterministic; narrative fields and fair-value assumptions are research notes. Live prices are refreshed server-side when available, while fundamentals remain the dated research snapshot.
     </section>
 
     <main>

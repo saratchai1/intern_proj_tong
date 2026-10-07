@@ -24,6 +24,11 @@
   const money = (v) => v == null ? "—" : "$" + fmt.format(v);
   const pct = (v) => v == null ? "—" : fmt.format(v) + "%";
   const multiple = (v) => v == null ? "—" : fmt.format(v) + "×";
+  state.liveAsOf = null;
+  state.source.companies.forEach(s => {
+    s._sharesEstimate = s.marketCap / s.price;
+    s._snapshotPrice = s.price;
+  });
 
   function baseUpside(s) {
     return ((s.baseFV / s.price) - 1) * 100;
@@ -100,7 +105,9 @@
     const top = [...state.filtered].sort((a, b) => b.score - a.score)[0];
     $("topScore").textContent = top ? top.ticker + " " + top.score : "—";
     $("compareCount").textContent = state.compare.size;
-    $("dataStatus").textContent = "Snapshot " + state.source.asOf;
+    $("dataStatus").textContent = state.liveAsOf
+      ? "Live price " + new Date(state.liveAsOf).toLocaleString()
+      : "Snapshot " + state.source.asOf;
   }
 
   function renderRows() {
@@ -367,6 +374,55 @@
       '<p class="muted">This solves for the constant 5-year FCF growth rate that makes the deterministic DCF equal the current stock price, holding discount and terminal-growth assumptions fixed.</p>';
   }
 
+
+  async function refreshLivePrices({ silent = false } = {}) {
+    const btn = $("liveBtn");
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Refreshing…";
+    try {
+      const symbols = state.source.companies.map(s => s.ticker).join(",");
+      const response = await fetch("/api/quotes?symbols=" + encodeURIComponent(symbols), {
+        headers: { "Accept": "application/json" }
+      });
+      if (!response.ok) throw new Error("Live quote service returned " + response.status);
+      const payload = await response.json();
+      let updated = 0;
+      for (const q of payload.quotes || []) {
+        if (!Number.isFinite(q.price)) continue;
+        const s = state.source.companies.find(x => x.ticker === q.symbol);
+        if (!s) continue;
+        s.price = q.price;
+        if (Number.isFinite(s._sharesEstimate)) {
+          s.marketCap = s._sharesEstimate * q.price;
+        }
+        s.liveQuote = {
+          previousClose: q.previousClose,
+          currency: q.currency,
+          exchange: q.exchange,
+          marketState: q.marketState
+        };
+        updated += 1;
+      }
+      if (!updated) throw new Error("No live prices were returned.");
+      state.liveAsOf = payload.asOf || new Date().toISOString();
+      applyFilters();
+      if (!silent) {
+        btn.textContent = "Updated " + updated + " prices";
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1300);
+        return;
+      }
+    } catch (err) {
+      console.warn("Live price refresh failed:", err);
+      if (!silent) alert("Could not refresh live prices. The app is still usable with the research snapshot.");
+    } finally {
+      if (silent || btn.textContent === "Refreshing…") {
+        btn.textContent = original;
+        btn.disabled = false;
+      }
+    }
+  }
+
   function exportCsv() {
     const columns = ["ticker","company","sector","marketCap","price","forwardPE","fcfYield","revenueGrowth","roic","baseFV","upside","expected5Y","score","valueTrap"];
     const rows = state.filtered.map(s => ({
@@ -470,7 +526,7 @@
 
   $("resetFilters").addEventListener("click", resetFilters);
   $("clearCompare").addEventListener("click", () => { state.compare.clear(); render(); });
-  $("exportBtn").addEventListener("click", exportCsv);
+  $("liveBtn").addEventListener("click", () => refreshLivePrices());\n  $("exportBtn").addEventListener("click", exportCsv);
   $("watchBtn").addEventListener("click", () => {
     if (!state.selectedTicker) return;
     if (state.watchlist.has(state.selectedTicker)) state.watchlist.delete(state.selectedTicker);

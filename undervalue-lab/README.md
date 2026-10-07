@@ -15,11 +15,11 @@ A deterministic equity-research MVP for screening, valuation, reverse DCF, compa
 - CSV export
 - JSON dataset import
 - Local watchlist storage
-- Responsive desktop/mobile UI
+- Responsive desktop/mobile UI\n- Server-side live price refresh (no browser-side market-data call)
 
 ## Data warning
 
-The bundled data in `data.js` is a **dated research snapshot (2026-10-06)** created from the preceding research session. It is not a live market feed.
+The bundled fundamentals, fair values, and research notes in `data.js` are a **dated research snapshot (2026-10-06)** created from the preceding research session. The deployed app now refreshes **current prices server-side** via `api/quotes.js`; the deeper fundamentals are still snapshot data until a production fundamentals provider is connected.
 
 The app deliberately separates:
 
