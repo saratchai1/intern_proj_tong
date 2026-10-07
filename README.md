@@ -1,5 +1,20 @@
 # intern_proj_tong
 
+## Undervalue Lab
+
+เพิ่ม MVP สำหรับคัดกรองและเปรียบเทียบหุ้น undervalued ที่ [undervalue-lab/](./undervalue-lab/README.md)
+
+ฟีเจอร์หลัก:
+- Screener: market cap, FCF yield, ROIC, upside, sector, value-trap risk
+- Company comparison 2–5 บริษัท
+- Deterministic DCF playground + sensitivity matrix
+- Reverse DCF เพื่อดู growth ที่ราคาปัจจุบันกำลัง imply
+- Thesis / catalyst / risk / value-trap review
+- CSV export, JSON import, local watchlist
+- ข้อมูล bundled เป็น research snapshot ไม่ใช่ live feed
+
+> ขั้นต่อไปคือเชื่อม market/fundamentals provider แบบ server-side + SEC filings + PostgreSQL เพื่อให้ scan ตลาดและ update valuation อัตโนมัติ
+
 ## My QR Wallet
 
 เพิ่ม PWA สำหรับรวม QR รับเงินหลายธนาคารไว้ในที่เดียวแบบ local-first ที่ [qr-wallet/](./qr-wallet/README.md)

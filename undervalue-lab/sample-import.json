@@ -1,0 +1,37 @@
+{
+  "asOf": "2026-10-07",
+  "currency": "USD",
+  "note": "Example import. Replace with verified values.",
+  "companies": [
+    {
+      "ticker": "EXAMPLE",
+      "company": "Example Corp",
+      "sector": "Software",
+      "marketCap": 150,
+      "price": 100,
+      "forwardPE": 18,
+      "fcfYield": 6,
+      "revenueGrowth": 12,
+      "roic": 20,
+      "netDebtEbitda": 0.5,
+      "bearFV": 85,
+      "baseFV": 130,
+      "bullFV": 165,
+      "expected5Y": 13,
+      "expected10Y": 11,
+      "score": 84,
+      "moat": "Strong",
+      "valueTrap": "Low",
+      "conviction": "High",
+      "modelKind": "fcf",
+      "thesis": "Example only.",
+      "narrative": "Example only.",
+      "catalyst": "Example only.",
+      "risk": "Example only.",
+      "trapFlags": ["Example flag"],
+      "baseGrowth": 9,
+      "terminalGrowth": 3,
+      "discountRate": 9
+    }
+  ]
+}
